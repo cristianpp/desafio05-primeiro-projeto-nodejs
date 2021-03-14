@@ -1,35 +1,63 @@
 import TransactionsRepository from '../repositories/TransactionsRepository';
 import Transaction from '../models/Transaction';
 
+import { getCustomRepository, getRepository } from 'typeorm';
+import Category from '../models/Category';
+
+
+import AppError from '../errors/AppError';
+
 interface Request {
   title: string;
   value: number;
   type: 'income' | 'outcome';
+  category: string;
 }
 
 class CreateTransactionService {
-  private transactionsRepository: TransactionsRepository;
 
-  constructor(transactionsRepository: TransactionsRepository) {
-    this.transactionsRepository = transactionsRepository;
-  }
 
-  public execute({ title, value, type }: Request): Transaction {
+  public async execute({ title, value, type , category}: Request): Promise<Transaction> {
+
+    const transactionRepository = getCustomRepository(TransactionsRepository);
+
+    const categoryRepository = getRepository(Category);
+
+    let transactionCategory = await categoryRepository.findOne({
+      where: {
+        title: category,
+       },
+     });
+
+     if(!transactionCategory){
+       transactionCategory = categoryRepository.create({
+         title: category,
+       });
+
+       await categoryRepository.save(transactionCategory);
+
+     };
+
+
     if (!['income', 'outcome'].includes(type)) {
-      throw new Error('Transaction type is invalid');
+      throw new AppError('Transaction type is invalid');
     }
 
-    const { total } = this.transactionsRepository.getBalance();
+   const { total } = await transactionRepository.getBalance();
 
     if (type === 'outcome' && total < value) {
-      throw new Error('You do not have enough balance');
+      throw new AppError('You do not have enough balance');
     }
 
-    const transaction = this.transactionsRepository.create({
+    const transaction = transactionRepository.create({
       title,
       value,
       type,
+      category: transactionCategory,
     });
+
+    await transactionRepository.save(transaction);
+
     return transaction;
   }
 }
